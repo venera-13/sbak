@@ -1,0 +1,5 @@
+# files and folders to be included in backup.
+# supports globbing, escape spaces with backspaces. Paths with spaces not properly tested.
+# the parser expects full paths and each line to start with a slash "/".
+/home/user/.??*
+/home/user/documents
