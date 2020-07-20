@@ -12,6 +12,7 @@ main() {
 	log info "Starting sbak - simple backups for UNIX version $version"
 
 	# Load the configfile and set variables
+	# sbak.conf defaults to /etc/sbak.conf and is overridden by commandline argument -c
 	if [ -f $_arg_config ]; then
 		log info "Parsing configuration stored in: $_arg_config"
 		. $_arg_config
@@ -32,11 +33,29 @@ main() {
 		fi
 	done
 
+	# Parse .sbak files and create the backup
+	# Future versions will add option to skip this to be able to prune without making a backup
+	createBackup
+
+	# Start remote copy and/or pruning when enabled in the config or cmdline arguments
+	if [ "$remote" = "on" ]; then copyremote; fi
+	if [ "$prune" = "on" ]; then prune; fi
+
+	log info "sbak backup run finished in $(($(date +%s)-$starttime)) seconds"
+}
+
+createBackup() {
 	# Load items to backup from one or more .sbak files present in the includes directory
+	# Exit if no items to backup are found or no .sbak files are found.
 	filestobackup="$(cat $includesdir/*.sbak | grep -v '#')"
+	if [ $? -ne 0 ]; then
+		log error "Problem reading .sbak files in $includesdir or no items found to backup. Exiting."
+		exit 1
+	fi
 	log info "Parsed $(echo "$filestobackup" | wc -l | tr -d ' ') items from .sbak files in $includesdir"
 
 	# Create the backup tarball
+	# Exit if backup was not created, warn when tar returns errors.
 	timestamp=$(date '+%Y-%m-%d_%T')
 	backupfile=$backupdir/$timestamp.tar.gz
 	log info "Creating tarball as user $(id -un) with UID $(id -u)"
@@ -44,13 +63,13 @@ main() {
 	if [ $? -ne 0 ]; then
 		log warn "The tar command exited with a non-0 value. Check your logs at: $logfile_path"
 	fi
+
+	if [ ! -f $backupfile ]; then
+		log error "Backup $backupfile could not be created. Exiting."
+		exit 1
+	fi
+
 	log info "Created backup $backupfile with size $(du -h $backupfile | cut -f1)"
-
-	# Start remote copy and/or pruning when enabled in the config or cmdline arguments
-	if [ "$remote" = "on" ]; then copyremote; fi
-	if [ "$prune" = "on" ]; then prune; fi
-
-	log info "sbak backup run finished in $(($(date +%s)-$starttime)) seconds"
 }
 
 log() {
@@ -67,13 +86,23 @@ log() {
 
 	# Log to filesystem
 	if [ "$logfile" = "on" ]; then
-		echo "$(date '+%Y-%m-%d %T') $severity $message" >> $logfile_path
+		touch $logfile_path
+		if [ $? -ne 0 ]; then
+			echo "$(date '+%Y-%m-%d %T') error Failed to write to logfile $logfile_path. Exiting."
+			exit 1
+		fi
+			echo "$(date '+%Y-%m-%d %T') $severity $message" >> $logfile_path
 	fi
 }
 
 prune() {
 	local backups_removed=0
 	log info "Starting pruning of old backups"
+
+	if [ ! -d "$backupdir" ]; then
+		log error "Backup directory $backupdir not found or inaccessable. Exiting."
+		exit 1
+	fi
 
 	# Remove backups older than specified in $prune_maxage
 	if [ $prune_maxage -ne 0 ]; then
@@ -128,8 +157,18 @@ prune() {
 }
 
 copyremote() {
+	if [ ! -f $backupfile ]; then
+		log error "Backup file to be copied over ssh $backupfile not found or inaccessable. Exiting."
+		exit 1
+	fi
+
 	log info "Copying $backupfile over ssh to $remote_server as user $remote_user"
-	scp $backupfile $remote_user@$remote_server:$remote_path
+	if [ $(scp $backupfile $remote_user@$remote_server:$remote_path) ]; then
+		log info "Copying $backupfile to $remote_server finished"
+	else
+		log error "Something went wrong copying $backupfile to $remote_server over ssh. Exiting."
+		exit 1
+	fi
 }
 
 print_help() {
