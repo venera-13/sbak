@@ -2,7 +2,7 @@
 # stephan@okroshka.net (https://github.com/venera-13)
 # bash argument parsing powered by https://argbash.io
 # sbak - simple backups for UNIX
-version="1.0"
+version="1.1"
 starttime=$(date +%s)
 
 main() {
