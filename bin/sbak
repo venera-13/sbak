@@ -110,7 +110,7 @@ prune() {
 		local oldfiles=$(find $backupdir -type f -mtime +$prune_maxage)
 		if [ $(echo $oldfiles | wc -w) -gt 0 ]; then
 			log info "Found $(echo $oldfiles | wc -w) backups older than $prune_maxage days"
-			for file in $files; do
+			for file in $oldfiles; do
 				log info "Removing old backup: $file"
 				rm -f $file
 				((backups_removed++))
